@@ -436,8 +436,14 @@ function showSettingsMessage(message, type) {
  * 일반 메시지 표시 (임시 알림)
  */
 function showMessage(message, type) {
-  // 간단한 알림 - 나중에 개선 가능
   console.log(`[${type}] ${message}`);
+
+  // 알림으로 표시
+  if (type === 'error') {
+    alert('❌ ' + message);
+  } else if (type === 'success') {
+    console.log('✅ ' + message);
+  }
 }
 
 // 초기화 실행
