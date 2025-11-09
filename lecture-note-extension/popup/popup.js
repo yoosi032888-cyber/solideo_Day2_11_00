@@ -143,6 +143,12 @@ async function startRecording() {
       console.log('✅ 오디오 스트림 획득 성공');
 
       try {
+        // 오디오를 다시 재생 (사용자가 들을 수 있도록)
+        const audioContext = new AudioContext();
+        const source = audioContext.createMediaStreamSource(stream);
+        source.connect(audioContext.destination);
+        console.log('🔊 오디오 재생 시작');
+
         // MediaRecorder 설정
         mediaRecorder = new MediaRecorder(stream, {
           mimeType: 'audio/webm'
@@ -374,7 +380,9 @@ function handleMessage(message) {
       break;
 
     case 'notionError':
-      showMessage('Notion 오류: ' + message.message, 'error');
+      // Notion 오류는 콘솔에만 표시 (사용자를 방해하지 않음)
+      console.warn('⚠️ Notion 오류:', message.message);
+      console.log('💡 노트는 팝업에서 확인할 수 있습니다.');
       break;
   }
 }
