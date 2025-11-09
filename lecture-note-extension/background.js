@@ -205,11 +205,13 @@ async function summarizeText(text) {
  */
 async function saveToNotion(note) {
   try {
+    console.log('=== saveToNotion 시작 ===');
+
     // API 키와 설정 가져오기
     const { apiKeys, notion } = await chrome.storage.local.get(['apiKeys', 'notion']);
 
     if (!apiKeys || !apiKeys.notion) {
-      console.log('Notion API 키가 설정되지 않았습니다. Notion 저장을 건너뜁니다.');
+      console.log('⚠️ Notion API 키가 설정되지 않았습니다. Notion 저장을 건너뜁니다.');
       return;
     }
 
@@ -220,11 +222,8 @@ async function saveToNotion(note) {
 
       // 부모 페이지/데이터베이스 ID 필요
       if (!notion || !notion.databaseId) {
-        console.log('Notion 부모 페이지 ID가 설정되지 않았습니다.');
-        chrome.runtime.sendMessage({
-          type: 'notionError',
-          message: 'Notion 부모 페이지 ID를 설정해주세요.'
-        });
+        console.log('⚠️ Notion 부모 페이지 ID가 설정되지 않았습니다.');
+        console.log('💡 Notion 저장을 원하시면 설정에서 부모 페이지 ID를 입력하세요.');
         return;
       }
 
@@ -254,12 +253,31 @@ async function saveToNotion(note) {
       timestamp: note.timestamp
     });
 
-    console.log('Saved to Notion successfully');
+    console.log('✅ Notion에 저장 완료');
   } catch (error) {
-    console.error('Save to Notion error:', error);
+    console.error('❌ Notion 저장 오류:', error);
+
+    // 사용자에게 친절한 오류 메시지
+    let userMessage = 'Notion 저장에 실패했습니다.';
+
+    if (error.message.includes('Could not find')) {
+      userMessage += '\n\n해결 방법:\n1. Notion 페이지에서 "..." 클릭\n2. "연결 추가" 선택\n3. Integration 선택';
+    } else if (error.message.includes('unauthorized')) {
+      userMessage += '\n\nNotion Integration Token을 확인해주세요.';
+    }
+
+    console.log('⚠️ ' + userMessage);
+    console.log('💡 노트는 팝업에서 확인할 수 있습니다.');
+
+    // 오류를 popup에 전달하지만 프로그램은 계속 실행
     chrome.runtime.sendMessage({
       type: 'notionError',
-      message: error.message
+      message: userMessage
+    }, () => {
+      // 에러 무시
+      if (chrome.runtime.lastError) {
+        console.log('팝업이 닫혀 있습니다.');
+      }
     });
   }
 }

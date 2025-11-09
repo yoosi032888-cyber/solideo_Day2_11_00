@@ -20,10 +20,6 @@
         <span>상태:</span>
         <span id="recordingStatus" class="status-value">● 대기 중</span>
       </div>
-      <div class="status-item">
-        <span>Notion:</span>
-        <span id="notionStatus" class="status-value">❌ 미연결</span>
-      </div>
     </div>
 
     <!-- 제어 버튼 -->
@@ -38,11 +34,15 @@
 
     <!-- 실시간 노트 섹션 -->
     <div class="notes-section">
-      <h2>📝 실시간 노트</h2>
-      <div id="notesList" class="notes-list">
-        <div class="empty-state">
-          녹음을 시작하면 여기에 노트가 표시됩니다.
+      <div class="notes-header">
+        <h2>📝 강의 노트</h2>
+        <div class="notes-actions">
+          <button id="copyNotesBtn" class="icon-btn" title="노트 복사">📋</button>
+          <button id="downloadNotesBtn" class="icon-btn" title="노트 다운로드">💾</button>
+          <button id="clearNotesBtn" class="icon-btn" title="노트 지우기">🗑️</button>
         </div>
+      </div>
+      <div id="notesEditor" class="notes-editor" contenteditable="true" placeholder="녹음을 시작하면 여기에 노트가 자동으로 추가됩니다...">
       </div>
     </div>
 
@@ -72,37 +72,6 @@
           </a>
         </div>
 
-        <!-- Notion Integration Token -->
-        <div class="setting-group">
-          <label for="notionToken">📒 Notion Integration Token</label>
-          <input
-            type="password"
-            id="notionToken"
-            placeholder="secret_..."
-            class="input"
-          />
-          <a
-            href="https://www.notion.so/my-integrations"
-            target="_blank"
-            class="link"
-          >
-            🔗 발급받기
-          </a>
-        </div>
-
-        <!-- Notion 부모 페이지/데이터베이스 ID -->
-        <div class="setting-group">
-          <label for="notionParentId">📄 Notion 부모 페이지 ID</label>
-          <input
-            type="text"
-            id="notionParentId"
-            placeholder="페이지 또는 데이터베이스 ID"
-            class="input"
-          />
-          <small class="hint">
-            노트를 저장할 Notion 페이지 또는 데이터베이스의 ID를 입력하세요.
-          </small>
-        </div>
 
         <!-- 강의 제목 -->
         <div class="setting-group">
@@ -118,11 +87,6 @@
         <!-- 저장 버튼 -->
         <button id="saveSettingsBtn" class="btn btn-primary">
           저장
-        </button>
-
-        <!-- 연결 테스트 버튼 -->
-        <button id="testConnectionBtn" class="btn btn-secondary">
-          Notion 연결 테스트
         </button>
 
         <div id="settingsMessage" class="message hidden"></div>
