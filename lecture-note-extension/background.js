@@ -5,10 +5,6 @@
  */
 
 // 전역 변수
-let mediaRecorder = null;
-let audioChunks = [];
-let recordingInterval = null;
-let streamId = null;
 let keepAliveInterval = null;
 
 // Service Worker를 계속 활성 상태로 유지
@@ -29,81 +25,6 @@ chrome.runtime.onStartup.addListener(() => {
   console.log('Service Worker started');
   keepAlive();
 });
-
-/**
- * 오디오 캡처 시작
- */
-async function startRecording(tabId) {
-  try {
-    // 탭의 오디오 캡처
-    const stream = await navigator.mediaDevices.getUserMedia({
-      audio: {
-        mandatory: {
-          chromeMediaSource: 'tab',
-          chromeMediaSourceId: streamId
-        }
-      }
-    });
-
-    // MediaRecorder 설정
-    mediaRecorder = new MediaRecorder(stream, {
-      mimeType: 'audio/webm'
-    });
-
-    audioChunks = [];
-
-    // 데이터 수집
-    mediaRecorder.ondataavailable = (event) => {
-      if (event.data.size > 0) {
-        audioChunks.push(event.data);
-      }
-    };
-
-    // 녹음 중지 시 처리
-    mediaRecorder.onstop = async () => {
-      const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
-      audioChunks = [];
-
-      // Whisper API로 전송
-      await processAudio(audioBlob);
-    };
-
-    // 녹음 시작
-    mediaRecorder.start();
-
-    // 5초마다 청크 생성
-    recordingInterval = setInterval(() => {
-      if (mediaRecorder && mediaRecorder.state === 'recording') {
-        mediaRecorder.stop();
-        mediaRecorder.start();
-      }
-    }, 5000);
-
-    console.log('Recording started');
-    return { success: true };
-  } catch (error) {
-    console.error('Start recording error:', error);
-    return { success: false, error: error.message };
-  }
-}
-
-/**
- * 오디오 캡처 중지
- */
-function stopRecording() {
-  if (mediaRecorder && mediaRecorder.state !== 'inactive') {
-    mediaRecorder.stop();
-    mediaRecorder.stream.getTracks().forEach(track => track.stop());
-  }
-
-  if (recordingInterval) {
-    clearInterval(recordingInterval);
-    recordingInterval = null;
-  }
-
-  mediaRecorder = null;
-  console.log('Recording stopped');
-}
 
 /**
  * 오디오를 Whisper API로 전송하여 텍스트 변환
@@ -481,96 +402,31 @@ async function appendNotionBlocks(token, pageId, timestamp, summary, keywords) {
  * 메시지 리스너
  */
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  console.log('Message received:', message);
+  console.log('Message received:', message.type);
 
   switch (message.type) {
-    case 'startRecording':
-      // 현재 활성 탭 정보 가져오기
-      chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-        if (!tabs || tabs.length === 0) {
-          sendResponse({ success: false, error: '활성 탭을 찾을 수 없습니다.' });
-          return;
+    case 'processAudio':
+      // popup에서 전송한 오디오 데이터 처리
+      (async () => {
+        try {
+          console.log('📥 오디오 데이터 수신');
+
+          // base64 데이터를 Blob으로 변환
+          const response = await fetch(message.audioData);
+          const audioBlob = await response.blob();
+
+          console.log('📦 Blob 변환 완료, 크기:', audioBlob.size, 'bytes');
+
+          // 오디오 처리
+          await processAudio(audioBlob);
+
+          sendResponse({ success: true });
+        } catch (error) {
+          console.error('❌ processAudio 메시지 처리 오류:', error);
+          sendResponse({ success: false, error: error.message });
         }
-
-        const activeTab = tabs[0];
-        console.log('Active tab:', activeTab);
-
-        // 오디오가 재생 중인지 확인
-        if (!activeTab.audible) {
-          sendResponse({
-            success: false,
-            error: '현재 탭에서 오디오가 재생되지 않습니다.\n\n인강 영상을 재생한 후 다시 시도해주세요.'
-          });
-          return;
-        }
-
-        // TabCapture 시작
-        chrome.tabCapture.capture({ audio: true }, async (stream) => {
-          if (chrome.runtime.lastError) {
-            console.error('TabCapture error:', chrome.runtime.lastError);
-            sendResponse({
-              success: false,
-              error: '오디오 캡처 실패: ' + chrome.runtime.lastError.message
-            });
-            return;
-          }
-
-          if (!stream) {
-            sendResponse({
-              success: false,
-              error: '오디오 스트림을 캡처할 수 없습니다.\n\n오디오가 재생 중인지 확인해주세요.'
-            });
-            return;
-          }
-
-          try {
-            // MediaRecorder 설정
-            mediaRecorder = new MediaRecorder(stream, {
-              mimeType: 'audio/webm'
-            });
-
-            audioChunks = [];
-
-            mediaRecorder.ondataavailable = (event) => {
-              if (event.data.size > 0) {
-                audioChunks.push(event.data);
-              }
-            };
-
-            mediaRecorder.onstop = async () => {
-              const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
-              audioChunks = [];
-
-              // 최소 크기 확인 (너무 작으면 무시)
-              if (audioBlob.size > 1000) {
-                await processAudio(audioBlob);
-              }
-            };
-
-            mediaRecorder.start();
-            console.log('MediaRecorder started');
-
-            // 5초마다 청크 생성
-            recordingInterval = setInterval(() => {
-              if (mediaRecorder && mediaRecorder.state === 'recording') {
-                mediaRecorder.stop();
-                mediaRecorder.start();
-              }
-            }, 5000);
-
-            sendResponse({ success: true });
-          } catch (error) {
-            console.error('MediaRecorder error:', error);
-            sendResponse({ success: false, error: 'MediaRecorder 오류: ' + error.message });
-          }
-        });
-      });
-      return true; // 비동기 응답을 위해 true 반환
-
-    case 'stopRecording':
-      stopRecording();
-      sendResponse({ success: true });
-      break;
+      })();
+      return true; // 비동기 응답
 
     case 'getSession':
       chrome.storage.local.get(['currentSession'], (result) => {
