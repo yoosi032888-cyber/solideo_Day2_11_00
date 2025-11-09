@@ -427,51 +427,85 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
   switch (message.type) {
     case 'startRecording':
-      chrome.tabCapture.capture({ audio: true }, async (stream) => {
-        if (chrome.runtime.lastError) {
-          sendResponse({ success: false, error: chrome.runtime.lastError.message });
+      // 현재 활성 탭 정보 가져오기
+      chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+        if (!tabs || tabs.length === 0) {
+          sendResponse({ success: false, error: '활성 탭을 찾을 수 없습니다.' });
           return;
         }
 
-        if (!stream) {
-          sendResponse({ success: false, error: 'Failed to capture stream' });
-          return;
-        }
+        const activeTab = tabs[0];
+        console.log('Active tab:', activeTab);
 
-        try {
-          // MediaRecorder 설정
-          mediaRecorder = new MediaRecorder(stream, {
-            mimeType: 'audio/webm'
+        // 오디오가 재생 중인지 확인
+        if (!activeTab.audible) {
+          sendResponse({
+            success: false,
+            error: '현재 탭에서 오디오가 재생되지 않습니다.\n\n인강 영상을 재생한 후 다시 시도해주세요.'
           });
-
-          audioChunks = [];
-
-          mediaRecorder.ondataavailable = (event) => {
-            if (event.data.size > 0) {
-              audioChunks.push(event.data);
-            }
-          };
-
-          mediaRecorder.onstop = async () => {
-            const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
-            audioChunks = [];
-            await processAudio(audioBlob);
-          };
-
-          mediaRecorder.start();
-
-          // 5초마다 청크 생성
-          recordingInterval = setInterval(() => {
-            if (mediaRecorder && mediaRecorder.state === 'recording') {
-              mediaRecorder.stop();
-              mediaRecorder.start();
-            }
-          }, 5000);
-
-          sendResponse({ success: true });
-        } catch (error) {
-          sendResponse({ success: false, error: error.message });
+          return;
         }
+
+        // TabCapture 시작
+        chrome.tabCapture.capture({ audio: true }, async (stream) => {
+          if (chrome.runtime.lastError) {
+            console.error('TabCapture error:', chrome.runtime.lastError);
+            sendResponse({
+              success: false,
+              error: '오디오 캡처 실패: ' + chrome.runtime.lastError.message
+            });
+            return;
+          }
+
+          if (!stream) {
+            sendResponse({
+              success: false,
+              error: '오디오 스트림을 캡처할 수 없습니다.\n\n오디오가 재생 중인지 확인해주세요.'
+            });
+            return;
+          }
+
+          try {
+            // MediaRecorder 설정
+            mediaRecorder = new MediaRecorder(stream, {
+              mimeType: 'audio/webm'
+            });
+
+            audioChunks = [];
+
+            mediaRecorder.ondataavailable = (event) => {
+              if (event.data.size > 0) {
+                audioChunks.push(event.data);
+              }
+            };
+
+            mediaRecorder.onstop = async () => {
+              const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
+              audioChunks = [];
+
+              // 최소 크기 확인 (너무 작으면 무시)
+              if (audioBlob.size > 1000) {
+                await processAudio(audioBlob);
+              }
+            };
+
+            mediaRecorder.start();
+            console.log('MediaRecorder started');
+
+            // 5초마다 청크 생성
+            recordingInterval = setInterval(() => {
+              if (mediaRecorder && mediaRecorder.state === 'recording') {
+                mediaRecorder.stop();
+                mediaRecorder.start();
+              }
+            }, 5000);
+
+            sendResponse({ success: true });
+          } catch (error) {
+            console.error('MediaRecorder error:', error);
+            sendResponse({ success: false, error: 'MediaRecorder 오류: ' + error.message });
+          }
+        });
       });
       return true; // 비동기 응답을 위해 true 반환
 

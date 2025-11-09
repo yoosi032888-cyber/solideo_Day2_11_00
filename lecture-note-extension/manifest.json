@@ -7,7 +7,8 @@
     "tabCapture",
     "storage",
     "activeTab",
-    "scripting"
+    "scripting",
+    "tabs"
   ],
   "host_permissions": [
     "https://api.openai.com/*",
