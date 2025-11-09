@@ -26,6 +26,8 @@ const lectureTitleInput = document.getElementById('lectureTitle');
 
 // 현재 상태
 let isRecording = false;
+let mediaRecorder = null;
+let recordingInterval = null;
 
 /**
  * 초기화
@@ -123,20 +125,84 @@ async function startRecording() {
       }
     });
 
-    // background.js에 녹음 시작 요청
-    chrome.runtime.sendMessage({ type: 'startRecording' }, (response) => {
-      if (response && response.success) {
+    console.log('🎙️ 녹음 시작 시도...');
+
+    // TabCapture로 오디오 스트림 획득
+    chrome.tabCapture.capture({ audio: true }, async (stream) => {
+      if (chrome.runtime.lastError) {
+        console.error('TabCapture error:', chrome.runtime.lastError);
+        alert('오디오 캡처 실패: ' + chrome.runtime.lastError.message);
+        return;
+      }
+
+      if (!stream) {
+        alert('오디오 스트림을 캡처할 수 없습니다.\n\n영상이 재생 중인지 확인해주세요.');
+        return;
+      }
+
+      console.log('✅ 오디오 스트림 획득 성공');
+
+      try {
+        // MediaRecorder 설정
+        mediaRecorder = new MediaRecorder(stream, {
+          mimeType: 'audio/webm'
+        });
+
+        let audioChunks = [];
+
+        mediaRecorder.ondataavailable = (event) => {
+          if (event.data.size > 0) {
+            audioChunks.push(event.data);
+          }
+        };
+
+        mediaRecorder.onstop = async () => {
+          if (audioChunks.length === 0) return;
+
+          const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
+          console.log('📦 오디오 청크 크기:', audioBlob.size, 'bytes');
+
+          // 최소 크기 확인
+          if (audioBlob.size > 1000) {
+            // background로 오디오 데이터 전송
+            const reader = new FileReader();
+            reader.onload = () => {
+              chrome.runtime.sendMessage({
+                type: 'processAudio',
+                audioData: reader.result
+              });
+            };
+            reader.readAsDataURL(audioBlob);
+          }
+
+          audioChunks = [];
+        };
+
+        mediaRecorder.start();
+        console.log('✅ MediaRecorder 시작됨');
+
+        // 5초마다 청크 생성
+        recordingInterval = setInterval(() => {
+          if (mediaRecorder && mediaRecorder.state === 'recording') {
+            mediaRecorder.stop();
+            mediaRecorder.start();
+          }
+        }, 5000);
+
+        // UI 업데이트
         isRecording = true;
         updateRecordingUI(true);
         clearNotes();
-        showMessage('녹음이 시작되었습니다.', 'success');
-      } else {
-        alert('녹음 시작 실패: ' + (response?.error || '알 수 없는 오류'));
+        console.log('✅ 녹음 시작 완료');
+
+      } catch (error) {
+        console.error('MediaRecorder error:', error);
+        alert('MediaRecorder 오류: ' + error.message);
       }
     });
   } catch (error) {
     console.error('Start recording error:', error);
-    alert('녹음 시작 중 오류가 발생했습니다.');
+    alert('녹음 시작 중 오류가 발생했습니다: ' + error.message);
   }
 }
 
@@ -144,21 +210,33 @@ async function startRecording() {
  * 녹음 중지
  */
 async function stopRecording() {
-  chrome.runtime.sendMessage({ type: 'stopRecording' }, (response) => {
-    if (response && response.success) {
-      isRecording = false;
-      updateRecordingUI(false);
-      showMessage('녹음이 중지되었습니다.', 'success');
+  console.log('⏹️ 녹음 중지...');
 
-      // 세션 업데이트
-      chrome.storage.local.get(['currentSession'], (result) => {
-        if (result.currentSession) {
-          result.currentSession.isRecording = false;
-          chrome.storage.local.set({ currentSession: result.currentSession });
-        }
-      });
-    }
-  });
+  // MediaRecorder 중지
+  if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+    mediaRecorder.stop();
+    mediaRecorder.stream.getTracks().forEach(track => track.stop());
+  }
+
+  // 인터벌 정리
+  if (recordingInterval) {
+    clearInterval(recordingInterval);
+    recordingInterval = null;
+  }
+
+  mediaRecorder = null;
+
+  // UI 업데이트
+  isRecording = false;
+  updateRecordingUI(false);
+  console.log('✅ 녹음 중지 완료');
+
+  // 세션 업데이트
+  const { currentSession } = await chrome.storage.local.get(['currentSession']);
+  if (currentSession) {
+    currentSession.isRecording = false;
+    await chrome.storage.local.set({ currentSession });
+  }
 }
 
 /**
