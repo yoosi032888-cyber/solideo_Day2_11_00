@@ -9,6 +9,26 @@ let mediaRecorder = null;
 let audioChunks = [];
 let recordingInterval = null;
 let streamId = null;
+let keepAliveInterval = null;
+
+// Service Worker를 계속 활성 상태로 유지
+function keepAlive() {
+  keepAliveInterval = setInterval(() => {
+    console.log('Keep-alive ping');
+  }, 20000); // 20초마다
+}
+
+// 확장 프로그램 설치/업데이트 시 실행
+chrome.runtime.onInstalled.addListener(() => {
+  console.log('LectureNote AI Extension installed/updated');
+  keepAlive();
+});
+
+// Service Worker 시작 시 실행
+chrome.runtime.onStartup.addListener(() => {
+  console.log('Service Worker started');
+  keepAlive();
+});
 
 /**
  * 오디오 캡처 시작
@@ -89,12 +109,25 @@ function stopRecording() {
  * 오디오를 Whisper API로 전송하여 텍스트 변환
  */
 async function processAudio(audioBlob) {
+  console.log('=== processAudio 시작 ===');
+  console.log('Audio blob size:', audioBlob.size, 'bytes');
+
   try {
     // API 키 가져오기
     const { apiKeys } = await chrome.storage.local.get(['apiKeys']);
+    console.log('API keys loaded:', apiKeys ? 'Yes' : 'No');
+
     if (!apiKeys || !apiKeys.openai) {
-      throw new Error('OpenAI API 키가 설정되지 않았습니다.');
+      const errorMsg = 'OpenAI API 키가 설정되지 않았습니다.';
+      console.error(errorMsg);
+      chrome.runtime.sendMessage({
+        type: 'error',
+        message: errorMsg + '\n\n설정에서 API 키를 입력해주세요.'
+      });
+      return;
     }
+
+    console.log('Whisper API 호출 시작...');
 
     // FormData 생성
     const formData = new FormData();
@@ -111,25 +144,31 @@ async function processAudio(audioBlob) {
       body: formData
     });
 
+    console.log('Whisper API 응답 상태:', response.status);
+
     if (!response.ok) {
-      throw new Error(`Whisper API error: ${response.statusText}`);
+      const errorData = await response.json().catch(() => ({}));
+      const errorMsg = errorData.error?.message || response.statusText;
+      throw new Error(`Whisper API 오류 (${response.status}): ${errorMsg}`);
     }
 
     const data = await response.json();
     const text = data.text;
 
-    console.log('Transcribed text:', text);
+    console.log('✅ 텍스트 변환 완료:', text.substring(0, 100) + '...');
 
     // 텍스트가 있으면 GPT-4로 요약
-    if (text && text.trim().length > 0) {
+    if (text && text.trim().length > 10) {
       await summarizeText(text);
+    } else {
+      console.log('⚠️ 텍스트가 너무 짧아서 요약을 건너뜁니다.');
     }
   } catch (error) {
-    console.error('Process audio error:', error);
+    console.error('❌ processAudio 오류:', error);
     // 에러를 popup에 전달
     chrome.runtime.sendMessage({
       type: 'error',
-      message: error.message
+      message: '오디오 처리 오류: ' + error.message
     });
   }
 }
@@ -138,12 +177,17 @@ async function processAudio(audioBlob) {
  * GPT-4 API로 텍스트 요약 및 키워드 추출
  */
 async function summarizeText(text) {
+  console.log('=== summarizeText 시작 ===');
+  console.log('텍스트 길이:', text.length, '자');
+
   try {
     // API 키 가져오기
     const { apiKeys } = await chrome.storage.local.get(['apiKeys']);
     if (!apiKeys || !apiKeys.openai) {
       throw new Error('OpenAI API 키가 설정되지 않았습니다.');
     }
+
+    console.log('GPT-4 API 호출 시작...');
 
     // GPT-4 API 호출
     const response = await fetch('https://api.openai.com/v1/chat/completions', {
@@ -169,20 +213,24 @@ async function summarizeText(text) {
       })
     });
 
+    console.log('GPT-4 API 응답 상태:', response.status);
+
     if (!response.ok) {
-      throw new Error(`GPT-4 API error: ${response.statusText}`);
+      const errorData = await response.json().catch(() => ({}));
+      const errorMsg = errorData.error?.message || response.statusText;
+      throw new Error(`GPT-4 API 오류 (${response.status}): ${errorMsg}`);
     }
 
     const data = await response.json();
     const summary = data.choices[0].message.content;
 
-    console.log('Summary:', summary);
+    console.log('✅ 요약 완료:', summary);
 
     // 요약과 키워드 분리
     const parts = summary.split('\n\n');
     const summaryText = parts[0];
     const keywordsLine = parts[1] || '';
-    const keywords = keywordsLine.replace('키워드:', '').trim().split(',').map(k => k.trim());
+    const keywords = keywordsLine.replace('키워드:', '').trim().split(',').map(k => k.trim()).filter(k => k);
 
     // 타임스탬프 생성
     const now = new Date();
@@ -197,26 +245,36 @@ async function summarizeText(text) {
       notionSaved: false
     };
 
+    console.log('📝 노트 생성:', note);
+
     // 스토리지에 저장
     const { currentSession } = await chrome.storage.local.get(['currentSession']);
     if (currentSession) {
       currentSession.notes.push(note);
       await chrome.storage.local.set({ currentSession });
+      console.log('💾 스토리지에 저장 완료');
     }
 
     // popup에 업데이트 전달
+    console.log('📤 팝업에 메시지 전송...');
     chrome.runtime.sendMessage({
       type: 'newNote',
       note
+    }, (response) => {
+      if (chrome.runtime.lastError) {
+        console.log('⚠️ 팝업이 닫혀 있습니다:', chrome.runtime.lastError.message);
+      } else {
+        console.log('✅ 팝업에 메시지 전송 완료');
+      }
     });
 
     // Notion에 저장
     await saveToNotion(note);
   } catch (error) {
-    console.error('Summarize text error:', error);
+    console.error('❌ summarizeText 오류:', error);
     chrome.runtime.sendMessage({
       type: 'error',
-      message: error.message
+      message: '요약 처리 오류: ' + error.message
     });
   }
 }
@@ -526,3 +584,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 });
 
 console.log('Background service worker loaded');
+
+// 스크립트 로드 시 keep-alive 시작
+keepAlive();
