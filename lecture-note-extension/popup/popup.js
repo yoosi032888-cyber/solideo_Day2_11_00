@@ -10,18 +10,19 @@ const stopBtn = document.getElementById('stopBtn');
 const settingsBtn = document.getElementById('settingsBtn');
 const closeSettingsBtn = document.getElementById('closeSettingsBtn');
 const saveSettingsBtn = document.getElementById('saveSettingsBtn');
-const testConnectionBtn = document.getElementById('testConnectionBtn');
 
 const recordingStatus = document.getElementById('recordingStatus');
-const notionStatus = document.getElementById('notionStatus');
-const notesList = document.getElementById('notesList');
+const notesEditor = document.getElementById('notesEditor');
 const settingsPanel = document.getElementById('settingsPanel');
 const settingsMessage = document.getElementById('settingsMessage');
 
+// 노트 액션 버튼
+const copyNotesBtn = document.getElementById('copyNotesBtn');
+const downloadNotesBtn = document.getElementById('downloadNotesBtn');
+const clearNotesBtn = document.getElementById('clearNotesBtn');
+
 // 설정 입력 필드
 const openaiKeyInput = document.getElementById('openaiKey');
-const notionTokenInput = document.getElementById('notionToken');
-const notionParentIdInput = document.getElementById('notionParentId');
 const lectureTitleInput = document.getElementById('lectureTitle');
 
 // 현재 상태
@@ -45,7 +46,14 @@ async function init() {
   settingsBtn.addEventListener('click', openSettings);
   closeSettingsBtn.addEventListener('click', closeSettings);
   saveSettingsBtn.addEventListener('click', saveSettings);
-  testConnectionBtn.addEventListener('click', testNotionConnection);
+
+  // 노트 액션
+  copyNotesBtn.addEventListener('click', copyNotes);
+  downloadNotesBtn.addEventListener('click', downloadNotes);
+  clearNotesBtn.addEventListener('click', confirmClearNotes);
+
+  // 노트 자동 저장
+  notesEditor.addEventListener('input', saveNotesToStorage);
 
   // background.js로부터 메시지 수신
   chrome.runtime.onMessage.addListener(handleMessage);
@@ -55,24 +63,10 @@ async function init() {
  * 설정 불러오기
  */
 async function loadSettings() {
-  const { apiKeys, notion } = await chrome.storage.local.get(['apiKeys', 'notion']);
+  const { apiKeys } = await chrome.storage.local.get(['apiKeys']);
 
   if (apiKeys) {
     openaiKeyInput.value = apiKeys.openai || '';
-    notionTokenInput.value = apiKeys.notion || '';
-  }
-
-  if (notion) {
-    notionParentIdInput.value = notion.databaseId || '';
-  }
-
-  // Notion 상태 업데이트
-  if (apiKeys && apiKeys.notion) {
-    notionStatus.textContent = '✅ 연결됨';
-    notionStatus.style.color = '#28a745';
-  } else {
-    notionStatus.textContent = '❌ 미연결';
-    notionStatus.style.color = '#dc3545';
   }
 }
 
@@ -80,7 +74,7 @@ async function loadSettings() {
  * 현재 세션 불러오기
  */
 async function loadSession() {
-  const { currentSession } = await chrome.storage.local.get(['currentSession']);
+  const { currentSession, savedNotes } = await chrome.storage.local.get(['currentSession', 'savedNotes']);
 
   if (currentSession) {
     // 강의 제목 설정
@@ -91,11 +85,11 @@ async function loadSession() {
       isRecording = true;
       updateRecordingUI(true);
     }
+  }
 
-    // 노트 목록 표시
-    if (currentSession.notes && currentSession.notes.length > 0) {
-      displayNotes(currentSession.notes);
-    }
+  // 저장된 노트 불러오기
+  if (savedNotes) {
+    notesEditor.innerHTML = savedNotes;
   }
 }
 
@@ -263,100 +257,107 @@ function updateRecordingUI(recording) {
 }
 
 /**
- * 노트 목록 표시
- */
-function displayNotes(notes) {
-  notesList.innerHTML = '';
-
-  if (notes.length === 0) {
-    notesList.innerHTML = '<div class="empty-state">녹음을 시작하면 여기에 노트가 표시됩니다.</div>';
-    return;
-  }
-
-  // 최신 노트가 위로 오도록 역순 정렬
-  const sortedNotes = [...notes].reverse();
-
-  sortedNotes.forEach(note => {
-    const noteItem = createNoteElement(note);
-    notesList.appendChild(noteItem);
-  });
-}
-
-/**
- * 노트 요소 생성
- */
-function createNoteElement(note) {
-  const div = document.createElement('div');
-  div.className = 'note-item';
-
-  // 타임스탬프
-  const timestamp = document.createElement('div');
-  timestamp.className = 'note-timestamp';
-  timestamp.textContent = `⏰ ${note.timestamp}`;
-  div.appendChild(timestamp);
-
-  // 요약
-  const summary = document.createElement('div');
-  summary.className = 'note-summary';
-
-  // 요약 내용을 리스트로 변환
-  const lines = note.summary.split('\n').filter(line => line.trim());
-  const ul = document.createElement('ul');
-  lines.forEach(line => {
-    const li = document.createElement('li');
-    li.textContent = line.replace(/^[•\-]\s*/, '');
-    ul.appendChild(li);
-  });
-  summary.appendChild(ul);
-  div.appendChild(summary);
-
-  // 키워드
-  if (note.keywords && note.keywords.length > 0) {
-    const keywordsDiv = document.createElement('div');
-    keywordsDiv.className = 'note-keywords';
-    keywordsDiv.innerHTML = '🏷️ ';
-
-    note.keywords.forEach(keyword => {
-      const tag = document.createElement('span');
-      tag.className = 'keyword-tag';
-      tag.textContent = keyword;
-      keywordsDiv.appendChild(tag);
-    });
-
-    div.appendChild(keywordsDiv);
-  }
-
-  // Notion 저장 상태
-  if (note.notionSaved) {
-    const saved = document.createElement('div');
-    saved.className = 'notion-saved';
-    saved.innerHTML = '✅ Notion에 저장됨';
-    div.appendChild(saved);
-  }
-
-  return div;
-}
-
-/**
- * 노트 목록 지우기
- */
-function clearNotes() {
-  notesList.innerHTML = '<div class="empty-state">녹음을 시작하면 여기에 노트가 표시됩니다.</div>';
-}
-
-/**
  * 새 노트 추가
  */
 function addNote(note) {
-  // 빈 상태 메시지 제거
-  const emptyState = notesList.querySelector('.empty-state');
-  if (emptyState) {
-    emptyState.remove();
+  // 현재 노트 내용에 새로운 노트 추가
+  const noteHtml = formatNoteAsHtml(note);
+
+  // 기존 내용 앞에 추가 (최신이 위로)
+  notesEditor.innerHTML = noteHtml + notesEditor.innerHTML;
+
+  // 스토리지에 저장
+  saveNotesToStorage();
+}
+
+/**
+ * 노트를 HTML로 포맷
+ */
+function formatNoteAsHtml(note) {
+  let html = `<h3>⏰ ${note.timestamp}</h3>`;
+
+  // 요약 내용
+  const lines = note.summary.split('\n').filter(line => line.trim());
+  html += '<ul>';
+  lines.forEach(line => {
+    const cleanLine = line.replace(/^[•\-]\s*/, '');
+    html += `<li>${cleanLine}</li>`;
+  });
+  html += '</ul>';
+
+  // 키워드
+  if (note.keywords && note.keywords.length > 0) {
+    html += `<div class="keywords">🏷️ 키워드: ${note.keywords.join(', ')}</div>`;
   }
 
-  // 새 노트를 맨 위에 추가
-  const noteElement = createNoteElement(note);
-  notesList.insertBefore(noteElement, notesList.firstChild);
+  html += '<hr>';
+  return html;
+}
+
+/**
+ * 노트를 스토리지에 저장
+ */
+async function saveNotesToStorage() {
+  await chrome.storage.local.set({ savedNotes: notesEditor.innerHTML });
+}
+
+/**
+ * 노트 복사
+ */
+async function copyNotes() {
+  const text = notesEditor.innerText;
+
+  if (!text || text.trim().length === 0) {
+    alert('복사할 노트가 없습니다.');
+    return;
+  }
+
+  try {
+    await navigator.clipboard.writeText(text);
+    showMessage('노트가 클립보드에 복사되었습니다!', 'success');
+  } catch (error) {
+    console.error('복사 실패:', error);
+    alert('복사에 실패했습니다.');
+  }
+}
+
+/**
+ * 노트 다운로드
+ */
+function downloadNotes() {
+  const text = notesEditor.innerText;
+
+  if (!text || text.trim().length === 0) {
+    alert('다운로드할 노트가 없습니다.');
+    return;
+  }
+
+  // 강의 제목과 날짜로 파일명 생성
+  const title = lectureTitleInput.value.trim() || '강의노트';
+  const date = new Date().toLocaleDateString('ko-KR').replace(/\. /g, '-').replace('.', '');
+  const filename = `${title}_${date}.txt`;
+
+  // 다운로드
+  const blob = new Blob([text], { type: 'text/plain' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
+
+  showMessage('노트가 다운로드되었습니다!', 'success');
+}
+
+/**
+ * 노트 지우기 확인
+ */
+function confirmClearNotes() {
+  if (confirm('모든 노트를 지우시겠습니까?\n\n이 작업은 되돌릴 수 없습니다.')) {
+    notesEditor.innerHTML = '';
+    saveNotesToStorage();
+    showMessage('노트가 지워졌습니다.', 'success');
+  }
 }
 
 /**
@@ -426,8 +427,6 @@ function closeSettings() {
  */
 async function saveSettings() {
   const openaiKey = openaiKeyInput.value.trim();
-  const notionToken = notionTokenInput.value.trim();
-  const notionParentId = notionParentIdInput.value.trim();
   const lectureTitle = lectureTitleInput.value.trim();
 
   // 유효성 검사
@@ -439,12 +438,7 @@ async function saveSettings() {
   // 저장
   await chrome.storage.local.set({
     apiKeys: {
-      openai: openaiKey,
-      notion: notionToken
-    },
-    notion: {
-      databaseId: notionParentId,
-      currentPageId: '' // 새 세션 시작 시 새 페이지 생성
+      openai: openaiKey
     }
   });
 
@@ -457,51 +451,10 @@ async function saveSettings() {
 
   showSettingsMessage('설정이 저장되었습니다.', 'success');
 
-  // Notion 상태 업데이트
-  await loadSettings();
-
-  // 3초 후 패널 닫기
+  // 2초 후 패널 닫기
   setTimeout(() => {
     closeSettings();
   }, 2000);
-}
-
-/**
- * Notion 연결 테스트
- */
-async function testNotionConnection() {
-  const notionToken = notionTokenInput.value.trim();
-
-  if (!notionToken) {
-    showSettingsMessage('Notion Integration Token을 입력해주세요.', 'error');
-    return;
-  }
-
-  try {
-    testConnectionBtn.disabled = true;
-    testConnectionBtn.textContent = '테스트 중...';
-
-    const response = await fetch('https://api.notion.com/v1/users/me', {
-      headers: {
-        'Authorization': `Bearer ${notionToken}`,
-        'Notion-Version': '2022-06-28'
-      }
-    });
-
-    testConnectionBtn.disabled = false;
-    testConnectionBtn.textContent = 'Notion 연결 테스트';
-
-    if (response.ok) {
-      showSettingsMessage('✅ Notion 연결 성공!', 'success');
-    } else {
-      const error = await response.json();
-      showSettingsMessage('❌ Notion 연결 실패: ' + (error.message || '토큰을 확인해주세요.'), 'error');
-    }
-  } catch (error) {
-    testConnectionBtn.disabled = false;
-    testConnectionBtn.textContent = 'Notion 연결 테스트';
-    showSettingsMessage('❌ 연결 테스트 실패: ' + error.message, 'error');
-  }
 }
 
 /**
