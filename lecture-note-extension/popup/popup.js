@@ -192,7 +192,6 @@ async function startRecording() {
         // UI 업데이트
         isRecording = true;
         updateRecordingUI(true);
-        clearNotes();
         console.log('✅ 녹음 시작 완료');
 
       } catch (error) {
