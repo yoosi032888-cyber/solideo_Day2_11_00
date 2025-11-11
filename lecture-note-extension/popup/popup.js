@@ -153,26 +153,46 @@ async function startRecording() {
         mediaRecorder.ondataavailable = (event) => {
           if (event.data.size > 0) {
             audioChunks.push(event.data);
+            console.log('📼 오디오 데이터 수신:', event.data.size, 'bytes');
           }
         };
 
         mediaRecorder.onstop = async () => {
-          if (audioChunks.length === 0) return;
+          console.log('⏹️ MediaRecorder 정지됨');
+          console.log('📦 수집된 청크 개수:', audioChunks.length);
+
+          if (audioChunks.length === 0) {
+            console.warn('⚠️ 오디오 청크가 없습니다!');
+            return;
+          }
 
           const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
-          console.log('📦 오디오 청크 크기:', audioBlob.size, 'bytes');
+          console.log('📦 오디오 Blob 크기:', audioBlob.size, 'bytes');
 
           // 최소 크기 확인
           if (audioBlob.size > 1000) {
+            console.log('✅ 오디오 크기 충분 - background로 전송 시작');
             // background로 오디오 데이터 전송
             const reader = new FileReader();
             reader.onload = () => {
+              console.log('📤 background로 메시지 전송 중...');
               chrome.runtime.sendMessage({
                 type: 'processAudio',
                 audioData: reader.result
+              }, (response) => {
+                if (chrome.runtime.lastError) {
+                  console.error('❌ 메시지 전송 실패:', chrome.runtime.lastError);
+                } else {
+                  console.log('✅ background로 메시지 전송 완료');
+                }
               });
             };
+            reader.onerror = (error) => {
+              console.error('❌ FileReader 오류:', error);
+            };
             reader.readAsDataURL(audioBlob);
+          } else {
+            console.warn('⚠️ 오디오 크기가 너무 작습니다:', audioBlob.size, 'bytes');
           }
 
           audioChunks = [];
@@ -259,11 +279,19 @@ function updateRecordingUI(recording) {
  * 새 노트 추가
  */
 function addNote(note) {
+  console.log('📝 addNote 호출됨:', {
+    timestamp: note.timestamp,
+    summaryLength: note.summary ? note.summary.length : 0,
+    summaryPreview: note.summary ? note.summary.substring(0, 50) : '(없음)'
+  });
+
   // 현재 노트 내용에 새로운 노트 추가
   const noteHtml = formatNoteAsHtml(note);
+  console.log('📄 HTML 생성 완료, 길이:', noteHtml.length);
 
   // 기존 내용 뒤에 추가 (최신이 아래로)
   notesEditor.innerHTML = notesEditor.innerHTML + noteHtml;
+  console.log('✅ 노트 에디터에 추가 완료');
 
   // 자동 스크롤 (최신 내용으로)
   notesEditor.scrollTop = notesEditor.scrollHeight;
