@@ -592,6 +592,29 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   console.log('Message received:', message.type);
 
   switch (message.type) {
+    case 'getStreamId':
+      // 특정 탭의 미디어 스트림 ID 요청
+      (async () => {
+        try {
+          const tabId = message.tabId;
+          console.log('🎬 StreamId 요청, 탭 ID:', tabId);
+
+          chrome.tabCapture.getMediaStreamId({ targetTabId: tabId }, (streamId) => {
+            if (chrome.runtime.lastError) {
+              console.error('❌ getMediaStreamId 오류:', chrome.runtime.lastError);
+              sendResponse({ success: false, error: chrome.runtime.lastError.message });
+            } else {
+              console.log('✅ StreamId 획득 성공:', streamId);
+              sendResponse({ success: true, streamId });
+            }
+          });
+        } catch (error) {
+          console.error('❌ getStreamId 메시지 처리 오류:', error);
+          sendResponse({ success: false, error: error.message });
+        }
+      })();
+      return true; // 비동기 응답을 위해 true 반환
+
     case 'processAudio':
       // popup에서 전송한 오디오 데이터 처리
       (async () => {

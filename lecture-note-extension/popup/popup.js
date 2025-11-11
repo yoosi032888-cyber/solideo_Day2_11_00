@@ -125,27 +125,40 @@ async function startRecording() {
     const { targetTabId } = await chrome.storage.local.get(['targetTabId']);
     console.log('📌 대상 탭 ID:', targetTabId);
 
-    // 대상 탭으로 포커스 (activeTab 권한 활성화)
-    if (targetTabId) {
-      await chrome.tabs.update(targetTabId, { active: true });
-      console.log('✅ 대상 탭으로 포커스 완료');
-
-      // 잠시 대기 (포커스 전환 완료 대기)
-      await new Promise(resolve => setTimeout(resolve, 500));
+    if (!targetTabId) {
+      alert('녹음할 탭을 찾을 수 없습니다.\n\n유튜브 탭에서 확장 프로그램 아이콘을 클릭해주세요.');
+      return;
     }
 
-    // TabCapture로 오디오 스트림 획득
-    chrome.tabCapture.capture({ audio: true }, async (stream) => {
-      if (chrome.runtime.lastError) {
-        console.error('TabCapture error:', chrome.runtime.lastError);
-        alert('오디오 캡처 실패: ' + chrome.runtime.lastError.message);
-        return;
-      }
+    // background에 streamId 요청
+    console.log('🎬 StreamId 요청 중...');
+    const streamIdResponse = await new Promise((resolve) => {
+      chrome.runtime.sendMessage({
+        type: 'getStreamId',
+        tabId: targetTabId
+      }, resolve);
+    });
 
-      if (!stream) {
-        alert('오디오 스트림을 캡처할 수 없습니다.\n\n영상이 재생 중인지 확인해주세요.');
-        return;
-      }
+    if (!streamIdResponse || !streamIdResponse.success) {
+      console.error('❌ StreamId 획득 실패:', streamIdResponse?.error);
+      alert('오디오 캡처 실패: ' + (streamIdResponse?.error || '알 수 없는 오류'));
+      return;
+    }
+
+    const streamId = streamIdResponse.streamId;
+    console.log('✅ StreamId 획득 성공:', streamId);
+
+    try {
+      // getUserMedia로 스트림 획득
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          mandatory: {
+            chromeMediaSource: 'tab',
+            chromeMediaSourceId: streamId
+          }
+        },
+        video: false
+      });
 
       console.log('✅ 오디오 스트림 획득 성공');
 
@@ -231,7 +244,10 @@ async function startRecording() {
         console.error('MediaRecorder error:', error);
         alert('MediaRecorder 오류: ' + error.message);
       }
-    });
+    } catch (error) {
+      console.error('getUserMedia error:', error);
+      alert('스트림 획득 오류: ' + error.message);
+    }
   } catch (error) {
     console.error('Start recording error:', error);
     alert('녹음 시작 중 오류가 발생했습니다: ' + error.message);
