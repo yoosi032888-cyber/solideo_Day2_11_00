@@ -29,6 +29,7 @@ const lectureTitleInput = document.getElementById('lectureTitle');
 let isRecording = false;
 let mediaRecorder = null;
 let recordingInterval = null;
+let recordingStartTime = null; // 녹음 시작 시간 (밀리초)
 
 /**
  * 초기화
@@ -204,7 +205,8 @@ async function startRecording() {
               console.log('📤 background로 메시지 전송 중...');
               chrome.runtime.sendMessage({
                 type: 'processAudio',
-                audioData: reader.result
+                audioData: reader.result,
+                recordingStartTime: recordingStartTime // 녹음 시작 시간 추가
               }, (response) => {
                 if (chrome.runtime.lastError) {
                   console.error('❌ 메시지 전송 실패:', chrome.runtime.lastError);
@@ -225,7 +227,8 @@ async function startRecording() {
         };
 
         mediaRecorder.start();
-        console.log('✅ MediaRecorder 시작됨');
+        recordingStartTime = Date.now(); // 녹음 시작 시간 기록
+        console.log('✅ MediaRecorder 시작됨, 시작 시간:', recordingStartTime);
 
         // 30초마다 청크 생성 (더 많은 내용)
         recordingInterval = setInterval(() => {
@@ -273,6 +276,7 @@ async function stopRecording() {
   }
 
   mediaRecorder = null;
+  recordingStartTime = null; // 녹음 시작 시간 초기화
 
   // UI 업데이트
   isRecording = false;

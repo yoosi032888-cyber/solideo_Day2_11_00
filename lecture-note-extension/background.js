@@ -70,9 +70,10 @@ chrome.action.onClicked.addListener(async (tab) => {
 /**
  * 오디오를 Whisper API로 전송하여 텍스트 변환
  */
-async function processAudio(audioBlob) {
+async function processAudio(audioBlob, recordingStartTime) {
   console.log('=== processAudio 시작 ===');
   console.log('Audio blob size:', audioBlob.size, 'bytes');
+  console.log('Recording start time:', recordingStartTime);
 
   try {
     // API 키 가져오기
@@ -146,9 +147,22 @@ async function processAudio(audioBlob) {
 
       console.log('📝 처리된 텍스트:', processedText.substring(0, 100) + '...');
 
-      // 타임스탬프 생성
-      const now = new Date();
-      const timestamp = now.toLocaleTimeString('ko-KR', { hour12: false });
+      // 타임스탬프 생성 (동영상 경과 시간)
+      let timestamp;
+      if (recordingStartTime) {
+        const elapsedMs = Date.now() - recordingStartTime;
+        const elapsedSeconds = Math.floor(elapsedMs / 1000);
+        const hours = Math.floor(elapsedSeconds / 3600);
+        const minutes = Math.floor((elapsedSeconds % 3600) / 60);
+        const seconds = elapsedSeconds % 60;
+        timestamp = `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+        console.log(`⏱️ 경과 시간: ${timestamp} (${elapsedMs}ms)`);
+      } else {
+        // fallback: 현재 시각
+        const now = new Date();
+        timestamp = now.toLocaleTimeString('ko-KR', { hour12: false });
+        console.log(`🕐 현재 시각: ${timestamp}`);
+      }
 
       // 노트 객체 생성
       const note = {
@@ -602,8 +616,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
           console.log('📦 Blob 변환 완료, 크기:', audioBlob.size, 'bytes');
 
-          // 오디오 처리
-          await processAudio(audioBlob);
+          // 오디오 처리 (녹음 시작 시간 전달)
+          await processAudio(audioBlob, message.recordingStartTime);
 
           sendResponse({ success: true });
         } catch (error) {
