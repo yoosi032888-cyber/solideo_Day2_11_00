@@ -475,7 +475,17 @@ function updateNoteSavedStatus(timestamp) {
 /**
  * 설정 패널 열기
  */
-function openSettings() {
+async function openSettings() {
+  // 저장된 설정 불러오기
+  const { processingMode } = await chrome.storage.local.get(['processingMode']);
+
+  // 처리 모드 복원 (기본값: refine)
+  const mode = processingMode || 'refine';
+  const radioButton = document.querySelector(`input[name="processingMode"][value="${mode}"]`);
+  if (radioButton) {
+    radioButton.checked = true;
+  }
+
   settingsPanel.classList.remove('hidden');
 }
 
@@ -494,6 +504,9 @@ async function saveSettings() {
   const openaiKey = openaiKeyInput.value.trim();
   const lectureTitle = lectureTitleInput.value.trim();
 
+  // 처리 모드 가져오기
+  const processingMode = document.querySelector('input[name="processingMode"]:checked').value;
+
   // 유효성 검사
   if (!openaiKey) {
     showSettingsMessage('OpenAI API 키를 입력해주세요.', 'error');
@@ -504,7 +517,8 @@ async function saveSettings() {
   await chrome.storage.local.set({
     apiKeys: {
       openai: openaiKey
-    }
+    },
+    processingMode: processingMode  // 처리 모드 저장
   });
 
   // 현재 세션의 강의 제목 업데이트

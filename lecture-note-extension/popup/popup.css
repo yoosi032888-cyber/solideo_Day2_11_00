@@ -411,3 +411,43 @@ body {
 .note-item {
   animation: slideIn 0.3s ease-out;
 }
+
+/* 라디오 버튼 그룹 */
+.radio-group {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 8px;
+}
+
+.radio-label {
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+  padding: 8px 12px;
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  transition: all 0.2s;
+}
+
+.radio-label:hover {
+  background-color: #f8f9fa;
+  border-color: #667eea;
+}
+
+.radio-label input[type="radio"] {
+  margin-right: 10px;
+  cursor: pointer;
+  width: 16px;
+  height: 16px;
+}
+
+.radio-label span {
+  font-size: 14px;
+  color: #333;
+}
+
+.radio-label input[type="radio"]:checked + span {
+  font-weight: 600;
+  color: #667eea;
+}
