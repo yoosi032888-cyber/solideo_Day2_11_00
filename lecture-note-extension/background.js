@@ -78,11 +78,45 @@ async function processAudio(audioBlob) {
 
     console.log('✅ 텍스트 변환 완료:', text.substring(0, 100) + '...');
 
-    // 텍스트가 있으면 GPT-4로 요약
+    // 텍스트가 있으면 바로 노트에 추가 (요약 건너뛰기)
     if (text && text.trim().length > 10) {
-      await summarizeText(text);
+      // 타임스탬프 생성
+      const now = new Date();
+      const timestamp = now.toLocaleTimeString('ko-KR', { hour12: false });
+
+      // 노트 객체 생성 (원본 텍스트 사용)
+      const note = {
+        timestamp,
+        originalText: text,
+        summary: text, // 요약 대신 원본 텍스트 사용
+        keywords: [], // 키워드 없음
+        notionSaved: false
+      };
+
+      console.log('📝 노트 생성:', note);
+
+      // 스토리지에 저장
+      const { currentSession } = await chrome.storage.local.get(['currentSession']);
+      if (currentSession) {
+        currentSession.notes.push(note);
+        await chrome.storage.local.set({ currentSession });
+        console.log('💾 스토리지에 저장 완료');
+      }
+
+      // popup에 업데이트 전달
+      console.log('📤 팝업에 메시지 전송...');
+      chrome.runtime.sendMessage({
+        type: 'newNote',
+        note
+      }, (response) => {
+        if (chrome.runtime.lastError) {
+          console.log('⚠️ 팝업이 닫혀 있습니다:', chrome.runtime.lastError.message);
+        } else {
+          console.log('✅ 팝업에 메시지 전송 완료');
+        }
+      });
     } else {
-      console.log('⚠️ 텍스트가 너무 짧아서 요약을 건너뜁니다.');
+      console.log('⚠️ 텍스트가 너무 짧아서 건너뜁니다.');
     }
   } catch (error) {
     console.error('❌ processAudio 오류:', error);
