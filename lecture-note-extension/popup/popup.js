@@ -121,6 +121,19 @@ async function startRecording() {
 
     console.log('🎙️ 녹음 시작 시도...');
 
+    // 저장된 대상 탭 ID 가져오기
+    const { targetTabId } = await chrome.storage.local.get(['targetTabId']);
+    console.log('📌 대상 탭 ID:', targetTabId);
+
+    // 대상 탭으로 포커스 (activeTab 권한 활성화)
+    if (targetTabId) {
+      await chrome.tabs.update(targetTabId, { active: true });
+      console.log('✅ 대상 탭으로 포커스 완료');
+
+      // 잠시 대기 (포커스 전환 완료 대기)
+      await new Promise(resolve => setTimeout(resolve, 500));
+    }
+
     // TabCapture로 오디오 스트림 획득
     chrome.tabCapture.capture({ audio: true }, async (stream) => {
       if (chrome.runtime.lastError) {

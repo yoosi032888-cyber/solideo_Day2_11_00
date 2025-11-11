@@ -29,7 +29,10 @@ chrome.runtime.onStartup.addListener(() => {
 // 확장 프로그램 아이콘 클릭 시 별도 창 열기
 let windowId = null;
 chrome.action.onClicked.addListener(async (tab) => {
-  console.log('Extension icon clicked');
+  console.log('Extension icon clicked, tab ID:', tab.id);
+
+  // 클릭한 탭 ID를 저장 (녹음할 탭)
+  await chrome.storage.local.set({ targetTabId: tab.id });
 
   // 이미 창이 열려 있는지 확인
   if (windowId) {
