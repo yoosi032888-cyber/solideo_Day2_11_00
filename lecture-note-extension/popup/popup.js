@@ -30,6 +30,7 @@ let isRecording = false;
 let mediaRecorder = null;
 let recordingInterval = null;
 let recordingStartTime = null; // 녹음 시작 시간 (밀리초)
+let videoStartOffset = 0; // 영상 시작 오프셋 (초)
 
 /**
  * 초기화
@@ -149,6 +150,33 @@ async function startRecording() {
     const streamId = streamIdResponse.streamId;
     console.log('✅ StreamId 획득 성공:', streamId);
 
+    // 영상의 현재 재생 시간 가져오기
+    console.log('🎬 영상 재생 시간 가져오는 중...');
+    try {
+      const result = await chrome.scripting.executeScript({
+        target: { tabId: targetTabId },
+        func: () => {
+          // video element 찾기
+          const video = document.querySelector('video');
+          if (video) {
+            return video.currentTime;
+          }
+          return 0;
+        }
+      });
+
+      if (result && result[0] && result[0].result !== undefined) {
+        videoStartOffset = Math.floor(result[0].result);
+        console.log('✅ 영상 시작 오프셋:', videoStartOffset, '초');
+      } else {
+        console.warn('⚠️ video element를 찾을 수 없습니다. 오프셋 = 0');
+        videoStartOffset = 0;
+      }
+    } catch (error) {
+      console.error('❌ 영상 시간 가져오기 실패:', error);
+      videoStartOffset = 0;
+    }
+
     try {
       // getUserMedia로 스트림 획득
       const stream = await navigator.mediaDevices.getUserMedia({
@@ -206,7 +234,8 @@ async function startRecording() {
               chrome.runtime.sendMessage({
                 type: 'processAudio',
                 audioData: reader.result,
-                recordingStartTime: recordingStartTime // 녹음 시작 시간 추가
+                recordingStartTime: recordingStartTime, // 녹음 시작 시간
+                videoStartOffset: videoStartOffset // 영상 시작 오프셋 (초)
               }, (response) => {
                 if (chrome.runtime.lastError) {
                   console.error('❌ 메시지 전송 실패:', chrome.runtime.lastError);
@@ -277,6 +306,7 @@ async function stopRecording() {
 
   mediaRecorder = null;
   recordingStartTime = null; // 녹음 시작 시간 초기화
+  videoStartOffset = 0; // 영상 오프셋 초기화
 
   // UI 업데이트
   isRecording = false;
