@@ -78,18 +78,21 @@ async function processAudio(audioBlob) {
 
     console.log('✅ 텍스트 변환 완료:', text.substring(0, 100) + '...');
 
-    // 텍스트가 있으면 바로 노트에 추가 (요약 건너뛰기)
+    // 텍스트가 있으면 GPT로 다듬기
     if (text && text.trim().length > 10) {
+      // GPT로 텍스트 다듬기
+      const refinedText = await refineText(text, apiKeys.openai);
+
       // 타임스탬프 생성
       const now = new Date();
       const timestamp = now.toLocaleTimeString('ko-KR', { hour12: false });
 
-      // 노트 객체 생성 (원본 텍스트 사용)
+      // 노트 객체 생성
       const note = {
         timestamp,
         originalText: text,
-        summary: text, // 요약 대신 원본 텍스트 사용
-        keywords: [], // 키워드 없음
+        summary: refinedText, // GPT로 다듬은 텍스트
+        keywords: [],
         notionSaved: false
       };
 
@@ -239,6 +242,79 @@ async function summarizeText(text) {
       type: 'error',
       message: '요약 처리 오류: ' + error.message
     });
+  }
+}
+
+/**
+ * GPT-4 API로 텍스트를 자연스럽게 다듬기
+ */
+async function refineText(text, apiKey) {
+  console.log('=== refineText 시작 ===');
+  console.log('원본 텍스트 길이:', text.length, '자');
+
+  try {
+    console.log('GPT-4 API 호출 시작 (텍스트 다듬기)...');
+
+    // GPT-4 API 호출
+    const response = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${apiKey}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        model: 'gpt-4',
+        messages: [
+          {
+            role: 'system',
+            content: `당신은 강의 필기를 자연스럽게 다듬는 도우미입니다.
+주어진 음성 인식 텍스트를 다음 규칙에 따라 다듬어주세요:
+
+1. 문법 오류를 수정하세요
+2. 중복된 단어나 문장을 제거하세요
+3. 문장을 자연스럽게 재구성하세요
+4. 핵심 의미는 절대 변경하지 마세요
+5. 내용을 요약하지 말고, 모든 정보를 포함하세요
+6. 존댓말/반말 톤을 유지하세요
+
+출력 형식: 다듬어진 텍스트만 출력하세요. 설명이나 주석은 붙이지 마세요.`
+          },
+          {
+            role: 'user',
+            content: '예시: 그 이제 우리가 이제 그 뭐냐 그 인공지능에 대해서 이제 좀 얘기를 해보겠습니다 인공지능은 뭐 이제 그 컴퓨터가 학습을 하는 거죠'
+          },
+          {
+            role: 'assistant',
+            content: '이제 인공지능에 대해 이야기해보겠습니다. 인공지능은 컴퓨터가 학습을 하는 것입니다.'
+          },
+          {
+            role: 'user',
+            content: text
+          }
+        ],
+        temperature: 0.3,
+        max_tokens: 1000
+      })
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      const errorMsg = errorData.error?.message || response.statusText;
+      throw new Error(`GPT-4 API 오류 (${response.status}): ${errorMsg}`);
+    }
+
+    const data = await response.json();
+    const refinedText = data.choices[0].message.content.trim();
+
+    console.log('✅ 텍스트 다듬기 완료');
+    console.log('다듬어진 텍스트:', refinedText.substring(0, 100) + '...');
+
+    return refinedText;
+  } catch (error) {
+    console.error('❌ refineText 오류:', error);
+    // 오류 발생 시 원본 텍스트 반환
+    console.log('⚠️ 오류로 인해 원본 텍스트를 반환합니다.');
+    return text;
   }
 }
 

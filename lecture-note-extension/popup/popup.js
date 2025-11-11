@@ -181,13 +181,13 @@ async function startRecording() {
         mediaRecorder.start();
         console.log('✅ MediaRecorder 시작됨');
 
-        // 5초마다 청크 생성 → 10초로 변경 (더 많은 내용)
+        // 30초마다 청크 생성 (더 많은 내용)
         recordingInterval = setInterval(() => {
           if (mediaRecorder && mediaRecorder.state === 'recording') {
             mediaRecorder.stop();
             mediaRecorder.start();
           }
-        }, 10000); // 5000 → 10000 (10초)
+        }, 30000); // 30초
 
         // UI 업데이트
         isRecording = true;
@@ -262,8 +262,11 @@ function addNote(note) {
   // 현재 노트 내용에 새로운 노트 추가
   const noteHtml = formatNoteAsHtml(note);
 
-  // 기존 내용 앞에 추가 (최신이 위로)
-  notesEditor.innerHTML = noteHtml + notesEditor.innerHTML;
+  // 기존 내용 뒤에 추가 (최신이 아래로)
+  notesEditor.innerHTML = notesEditor.innerHTML + noteHtml;
+
+  // 자동 스크롤 (최신 내용으로)
+  notesEditor.scrollTop = notesEditor.scrollHeight;
 
   // 스토리지에 저장
   saveNotesToStorage();
