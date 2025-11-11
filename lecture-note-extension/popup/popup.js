@@ -362,6 +362,12 @@ function downloadNotes() {
     return;
   }
 
+  // 녹음 중이면 자동으로 정지
+  if (isRecording) {
+    console.log('📥 다운로드 시작 - 녹음 자동 정지');
+    stopRecording();
+  }
+
   // 강의 제목과 날짜로 파일명 생성
   const title = lectureTitleInput.value.trim() || '강의노트';
   const date = new Date().toLocaleDateString('ko-KR').replace(/\. /g, '-').replace('.', '');
@@ -376,7 +382,7 @@ function downloadNotes() {
   a.click();
   URL.revokeObjectURL(url);
 
-  showMessage('노트가 다운로드되었습니다!', 'success');
+  showMessage('노트가 다운로드되었습니다! (녹음 자동 정지)', 'success');
 }
 
 /**

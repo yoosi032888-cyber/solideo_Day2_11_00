@@ -26,6 +26,44 @@ chrome.runtime.onStartup.addListener(() => {
   keepAlive();
 });
 
+// 확장 프로그램 아이콘 클릭 시 별도 창 열기
+let windowId = null;
+chrome.action.onClicked.addListener(async (tab) => {
+  console.log('Extension icon clicked');
+
+  // 이미 창이 열려 있는지 확인
+  if (windowId) {
+    try {
+      const window = await chrome.windows.get(windowId);
+      // 창이 존재하면 포커스
+      chrome.windows.update(windowId, { focused: true });
+      return;
+    } catch (error) {
+      // 창이 없으면 windowId 초기화
+      windowId = null;
+    }
+  }
+
+  // 새 창 열기
+  const window = await chrome.windows.create({
+    url: chrome.runtime.getURL('popup/popup.html'),
+    type: 'popup',
+    width: 750,
+    height: 750,
+    left: 100,
+    top: 100
+  });
+
+  windowId = window.id;
+
+  // 창이 닫히면 windowId 초기화
+  chrome.windows.onRemoved.addListener((closedWindowId) => {
+    if (closedWindowId === windowId) {
+      windowId = null;
+    }
+  });
+});
+
 /**
  * 오디오를 Whisper API로 전송하여 텍스트 변환
  */
