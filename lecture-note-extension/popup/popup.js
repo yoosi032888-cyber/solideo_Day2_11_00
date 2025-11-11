@@ -181,13 +181,13 @@ async function startRecording() {
         mediaRecorder.start();
         console.log('✅ MediaRecorder 시작됨');
 
-        // 5초마다 청크 생성
+        // 5초마다 청크 생성 → 10초로 변경 (더 많은 내용)
         recordingInterval = setInterval(() => {
           if (mediaRecorder && mediaRecorder.state === 'recording') {
             mediaRecorder.stop();
             mediaRecorder.start();
           }
-        }, 5000);
+        }, 10000); // 5000 → 10000 (10초)
 
         // UI 업데이트
         isRecording = true;
