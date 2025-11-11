@@ -589,7 +589,10 @@ async function appendNotionBlocks(token, pageId, timestamp, summary, keywords) {
  * 메시지 리스너
  */
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  console.log('Message received:', message.type);
+  console.log('=== Message received ===');
+  console.log('Full message:', JSON.stringify(message));
+  console.log('Message type:', message.type);
+  console.log('Type of type:', typeof message.type);
 
   switch (message.type) {
     case 'getStreamId':
