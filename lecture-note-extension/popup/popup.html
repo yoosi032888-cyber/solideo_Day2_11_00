@@ -84,6 +84,21 @@
           />
         </div>
 
+        <!-- 처리 모드 -->
+        <div class="setting-group">
+          <label>✨ 텍스트 처리 모드</label>
+          <div class="radio-group">
+            <label class="radio-label">
+              <input type="radio" name="processingMode" value="refine" checked />
+              <span>문장 다듬기 (자연스럽게 정리)</span>
+            </label>
+            <label class="radio-label">
+              <input type="radio" name="processingMode" value="summarize" />
+              <span>요약 (핵심 내용만)</span>
+            </label>
+          </div>
+        </div>
+
         <!-- 저장 버튼 -->
         <button id="saveSettingsBtn" class="btn btn-primary">
           저장

@@ -124,11 +124,27 @@ async function processAudio(audioBlob) {
     if (text && text.trim().length > 10) {
       console.log('✅ 텍스트 길이 충분 - 노트 생성 시작');
 
-      // GPT로 텍스트 다듬기 (임시로 비활성화 - 원본 사용)
-      // const refinedText = await refineText(text, apiKeys.openai);
-      const refinedText = text; // 원본 텍스트 직접 사용
+      // 처리 모드 확인
+      const { processingMode } = await chrome.storage.local.get(['processingMode']);
+      const mode = processingMode || 'refine'; // 기본값: refine
+      console.log('🔧 처리 모드:', mode);
 
-      console.log('📝 다듬어진 텍스트:', refinedText.substring(0, 100) + '...');
+      let processedText;
+      let keywords = [];
+
+      if (mode === 'summarize') {
+        // 요약 모드: summarizeText 함수 호출
+        console.log('📋 요약 모드 - summarizeText 호출');
+        const result = await summarizeText(text, apiKeys.openai);
+        processedText = result.summary;
+        keywords = result.keywords;
+      } else {
+        // 다듬기 모드: refineText 함수 호출
+        console.log('✨ 다듬기 모드 - refineText 호출');
+        processedText = await refineText(text, apiKeys.openai);
+      }
+
+      console.log('📝 처리된 텍스트:', processedText.substring(0, 100) + '...');
 
       // 타임스탬프 생성
       const now = new Date();
@@ -138,8 +154,8 @@ async function processAudio(audioBlob) {
       const note = {
         timestamp,
         originalText: text,
-        summary: refinedText,
-        keywords: [],
+        summary: processedText,
+        keywords: keywords,
         notionSaved: false
       };
 
@@ -185,24 +201,18 @@ async function processAudio(audioBlob) {
 /**
  * GPT-4 API로 텍스트 요약 및 키워드 추출
  */
-async function summarizeText(text) {
+async function summarizeText(text, apiKey) {
   console.log('=== summarizeText 시작 ===');
   console.log('텍스트 길이:', text.length, '자');
 
   try {
-    // API 키 가져오기
-    const { apiKeys } = await chrome.storage.local.get(['apiKeys']);
-    if (!apiKeys || !apiKeys.openai) {
-      throw new Error('OpenAI API 키가 설정되지 않았습니다.');
-    }
-
-    console.log('GPT-4 API 호출 시작...');
+    console.log('GPT-4 API 호출 시작 (요약)...');
 
     // GPT-4 API 호출
     const response = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${apiKeys.openai}`,
+        'Authorization': `Bearer ${apiKey}`,
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({
@@ -210,22 +220,22 @@ async function summarizeText(text) {
         messages: [
           {
             role: 'system',
-            content: '당신은 강의 필기 도우미입니다. 주어진 텍스트를 간단하게 정리하고 핵심 단어를 추출하세요. 텍스트가 짧아도 상관없습니다.\n\n출력 형식:\n• [핵심 내용 1]\n• [핵심 내용 2]\n\n키워드: [단어1, 단어2, 단어3]\n\n절대 하지 말 것: "정보가 부족하다", "더 많은 내용이 필요하다" 같은 말. 주어진 것만 정리하세요.'
+            content: '당신은 강의 필기 도우미입니다. 주어진 텍스트를 간단하게 요약하고 핵심 단어를 추출하세요.\n\n출력 형식:\n• [핵심 내용 1]\n• [핵심 내용 2]\n\n키워드: [단어1, 단어2, 단어3]\n\n중요: 텍스트가 짧아도 반드시 요약을 생성하세요. "정보가 부족하다"는 말은 절대 하지 마세요.'
           },
           {
             role: 'user',
-            content: '예시: AI 기술의 발전'
+            content: '예시: 오늘은 인공지능 기술의 발전과 응용 분야에 대해 설명하겠습니다.'
           },
           {
             role: 'assistant',
-            content: '• AI 기술의 발전\n\n키워드: AI, 기술, 발전'
+            content: '• 인공지능 기술의 발전과 응용\n\n키워드: 인공지능, 기술, 응용'
           },
           {
             role: 'user',
             content: text
           }
         ],
-        temperature: 0.7,
+        temperature: 0.5,
         max_tokens: 500
       })
     });
@@ -249,50 +259,18 @@ async function summarizeText(text) {
     const keywordsLine = parts[1] || '';
     const keywords = keywordsLine.replace('키워드:', '').trim().split(',').map(k => k.trim()).filter(k => k);
 
-    // 타임스탬프 생성
-    const now = new Date();
-    const timestamp = now.toLocaleTimeString('ko-KR', { hour12: false });
-
-    // 노트 객체 생성
-    const note = {
-      timestamp,
-      originalText: text,
+    return {
       summary: summaryText,
-      keywords,
-      notionSaved: false
+      keywords: keywords
     };
-
-    console.log('📝 노트 생성:', note);
-
-    // 스토리지에 저장
-    const { currentSession } = await chrome.storage.local.get(['currentSession']);
-    if (currentSession) {
-      currentSession.notes.push(note);
-      await chrome.storage.local.set({ currentSession });
-      console.log('💾 스토리지에 저장 완료');
-    }
-
-    // popup에 업데이트 전달
-    console.log('📤 팝업에 메시지 전송...');
-    chrome.runtime.sendMessage({
-      type: 'newNote',
-      note
-    }, (response) => {
-      if (chrome.runtime.lastError) {
-        console.log('⚠️ 팝업이 닫혀 있습니다:', chrome.runtime.lastError.message);
-      } else {
-        console.log('✅ 팝업에 메시지 전송 완료');
-      }
-    });
-
-    // Notion에 저장
-    await saveToNotion(note);
   } catch (error) {
     console.error('❌ summarizeText 오류:', error);
-    chrome.runtime.sendMessage({
-      type: 'error',
-      message: '요약 처리 오류: ' + error.message
-    });
+    // 오류 발생 시 원본 텍스트 반환
+    console.log('⚠️ 오류로 인해 원본 텍스트를 반환합니다.');
+    return {
+      summary: text,
+      keywords: []
+    };
   }
 }
 
