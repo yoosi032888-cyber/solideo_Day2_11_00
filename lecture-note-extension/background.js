@@ -26,6 +26,44 @@ chrome.runtime.onStartup.addListener(() => {
   keepAlive();
 });
 
+// 확장 프로그램 아이콘 클릭 시 별도 창 열기
+let windowId = null;
+chrome.action.onClicked.addListener(async (tab) => {
+  console.log('Extension icon clicked');
+
+  // 이미 창이 열려 있는지 확인
+  if (windowId) {
+    try {
+      const window = await chrome.windows.get(windowId);
+      // 창이 존재하면 포커스
+      chrome.windows.update(windowId, { focused: true });
+      return;
+    } catch (error) {
+      // 창이 없으면 windowId 초기화
+      windowId = null;
+    }
+  }
+
+  // 새 창 열기
+  const window = await chrome.windows.create({
+    url: chrome.runtime.getURL('popup/popup.html'),
+    type: 'popup',
+    width: 750,
+    height: 750,
+    left: 100,
+    top: 100
+  });
+
+  windowId = window.id;
+
+  // 창이 닫히면 windowId 초기화
+  chrome.windows.onRemoved.addListener((closedWindowId) => {
+    if (closedWindowId === windowId) {
+      windowId = null;
+    }
+  });
+});
+
 /**
  * 오디오를 Whisper API로 전송하여 텍스트 변환
  */
@@ -77,11 +115,17 @@ async function processAudio(audioBlob) {
     const text = data.text;
 
     console.log('✅ 텍스트 변환 완료:', text.substring(0, 100) + '...');
+    console.log('📏 텍스트 길이:', text.length, '자');
 
-    // 텍스트가 있으면 GPT로 다듬기
+    // 텍스트가 있으면 처리
     if (text && text.trim().length > 10) {
-      // GPT로 텍스트 다듬기
-      const refinedText = await refineText(text, apiKeys.openai);
+      console.log('✅ 텍스트 길이 충분 - 노트 생성 시작');
+
+      // GPT로 텍스트 다듬기 (임시로 비활성화 - 원본 사용)
+      // const refinedText = await refineText(text, apiKeys.openai);
+      const refinedText = text; // 원본 텍스트 직접 사용
+
+      console.log('📝 다듬어진 텍스트:', refinedText.substring(0, 100) + '...');
 
       // 타임스탬프 생성
       const now = new Date();
@@ -91,12 +135,16 @@ async function processAudio(audioBlob) {
       const note = {
         timestamp,
         originalText: text,
-        summary: refinedText, // GPT로 다듬은 텍스트
+        summary: refinedText,
         keywords: [],
         notionSaved: false
       };
 
-      console.log('📝 노트 생성:', note);
+      console.log('📝 노트 생성 완료:', {
+        timestamp: note.timestamp,
+        summaryLength: note.summary.length,
+        summaryPreview: note.summary.substring(0, 50) + '...'
+      });
 
       // 스토리지에 저장
       const { currentSession } = await chrome.storage.local.get(['currentSession']);
